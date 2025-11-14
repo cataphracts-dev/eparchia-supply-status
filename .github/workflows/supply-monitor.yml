@@ -3,7 +3,9 @@ name: Supply Status Monitor
 on:
   schedule:
     # Run daily at midnight EST (1 AM EDT)
-    - cron: "0 5 * * *"
+    - cron: "0 5 16-30 11 *" # Nov 16-30
+    - cron: "0 5 * 12 *" # All of December
+    - cron: "0 5 * 1-12 *" # All months from 2026 onward
 
   # Allow manual triggering
   workflow_dispatch:
