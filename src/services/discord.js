@@ -1,13 +1,12 @@
 const https = require("https");
 const { logger } = require("../utils/logger");
 const { format } = require("date-fns");
-const { formatInTimeZone } = require("date-fns-tz");
 
 class DiscordNotifier {
-  // Get current day in New York timezone
-  getCurrentDayNY() {
+  // Get current day in UTC timezone
+  getCurrentDayUTC() {
     const now = new Date();
-    return formatInTimeZone(now, "America/New_York", "EEEE, MMMM do");
+    return format(now, "EEEE, MMMM do") + " UTC";
   }
 
   // Calculate the date when supplies will reach zero
@@ -16,7 +15,7 @@ class DiscordNotifier {
     const zeroDate = new Date(
       now.getTime() + daysRemaining * 24 * 60 * 60 * 1000
     );
-    return formatInTimeZone(zeroDate, "America/New_York", "EEEE, MMMM do");
+    return format(zeroDate, "EEEE, MMMM do") + " UTC";
   }
 
   async sendSupplyStatus({
@@ -34,7 +33,7 @@ class DiscordNotifier {
     // Format the concise message with clickable hyperlink
     const description = [
       `⚡ **Status:** ${name}`,
-      `📅 ${this.getCurrentDayNY()} • [Open Sheet](${spreadsheetUrl})`,
+      `📅 ${this.getCurrentDayUTC()} • [Open Sheet](${spreadsheetUrl})`,
       `📦 **Supplies** ${currentSupplies} • 📉 **Cons** ${dailyConsumption}/d • ⏰ **Days** ${daysRemaining}`,
       `🚨 **Zero Date** ${this.getZeroSuppliesDate(daysRemaining)}`,
     ].join("\n");
@@ -100,7 +99,7 @@ class DiscordNotifier {
     // Format the concise message with clickable hyperlink for zero supplies
     const description = [
       `⚡ **Status:** ${name}`,
-      `📅 ${this.getCurrentDayNY()} • [Open Sheet](${spreadsheetUrl})`,
+      `📅 ${this.getCurrentDayUTC()} • [Open Sheet](${spreadsheetUrl})`,
       `📦 **Supplies** 0 (OUT OF STOCK) • 📉 **Cons** ${dailyConsumption}/d • ⏰ **Days** 0`,
       `🚨 **Zero Date** TODAY - IMMEDIATE ACTION REQUIRED`,
       ``,
