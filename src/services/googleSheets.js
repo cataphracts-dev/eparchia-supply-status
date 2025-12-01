@@ -271,6 +271,47 @@ class GoogleSheetsService {
   }
 
   /**
+   * Get all data from a sheet
+   * @param {string} sheetId - The Google Sheet ID
+   * @param {string} sheetName - Sheet name to read from
+   * @returns {Array<Array<string>>} - 2D array of cell values
+   */
+  async getSheetData(sheetId, sheetName) {
+    await this.initialize();
+
+    try {
+      logger.debug(
+        `Reading all data from sheet ${sheetId}, sheet "${sheetName}"`
+      );
+
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: sheetId,
+        range: `'${sheetName}'`,
+      });
+
+      const values = response.data.values;
+
+      if (!values || values.length === 0) {
+        throw new Error(
+          `No data found in sheet "${sheetName}" of spreadsheet ${sheetId}`
+        );
+      }
+
+      logger.debug(
+        `Retrieved ${values.length} rows from "${sheetName}"`
+      );
+
+      return values;
+    } catch (error) {
+      logger.error(
+        `Error getting sheet data from ${sheetId}:${sheetName}:`,
+        error
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Get multiple cell values in a single API call to reduce quota usage
    * @param {string} sheetId - The Google Sheet ID
    * @param {string[]} cellAddresses - Array of cell addresses (e.g., ['E5', 'G5'])

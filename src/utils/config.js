@@ -1,28 +1,112 @@
-const fs = require("fs").promises;
-const path = require("path");
 const { logger } = require("./logger");
+const { GoogleSheetsService } = require("../services/googleSheets");
+const { COMMANDER_DATABASE, SUPPLY_CELLS } = require("./constants");
 
+/**
+ * Extract Google Sheet ID from a URL or return the ID if already provided
+ * @param {string} urlOrId - Google Sheets URL or ID
+ * @returns {string} - The sheet ID
+ */
+function extractSheetId(urlOrId) {
+  if (!urlOrId) {
+    throw new Error("Sheet URL or ID is required");
+  }
+
+  // If it's already just an ID (no slashes or special chars), return it
+  if (!/[\/\?]/.test(urlOrId)) {
+    return urlOrId;
+  }
+
+  // Extract from URL: https://docs.google.com/spreadsheets/d/{ID}/edit...
+  const match = urlOrId.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (match && match[1]) {
+    return match[1];
+  }
+
+  throw new Error(`Invalid Google Sheets URL or ID: ${urlOrId}`);
+}
+
+/**
+ * Load configuration from Commander Database Google Sheet
+ * @returns {Promise<Array>} - Array of sheet configurations
+ */
 async function loadConfig() {
   try {
-    // Check if we're running in GitHub Actions with environment variable config
-    if (process.env.SHEETS_CONFIG) {
-      logger.info("Loading configuration from environment variable");
-      return JSON.parse(process.env.SHEETS_CONFIG);
+    const commanderSheetUrl = process.env.GOOGLE_SHEET_URL;
+    
+    if (!commanderSheetUrl) {
+      throw new Error("GOOGLE_SHEET_URL environment variable is not set");
     }
 
-    // Load from config file
-    const configPath = process.env.SHEETS_CONFIG_PATH || "./config/sheets.json";
-    const fullPath = path.resolve(configPath);
+    // Extract sheet ID from URL
+    const commanderSheetId = extractSheetId(commanderSheetUrl);
 
-    logger.info(`Loading configuration from file: ${fullPath}`);
+    logger.info(`Loading configuration from Commander Database (Sheet ID: ${commanderSheetId})`);
 
-    const configFile = await fs.readFile(fullPath, "utf8");
-    const config = JSON.parse(configFile);
+    const sheetsService = new GoogleSheetsService();
+    await sheetsService.initialize();
 
-    // Validate configuration
-    validateConfig(config);
+    // Read the Commander Database sheet
+    const data = await sheetsService.getSheetData(
+      commanderSheetId,
+      COMMANDER_DATABASE.SHEET_NAME
+    );
 
-    return config;
+    if (!data || data.length === 0) {
+      throw new Error(`No data found in ${COMMANDER_DATABASE.SHEET_NAME}`);
+    }
+
+    // First row should be headers
+    const headers = data[0];
+    const nameCol = headers.indexOf(COMMANDER_DATABASE.COLUMNS.NAME);
+    const armyUrlCol = headers.indexOf(COMMANDER_DATABASE.COLUMNS.ARMY_URL);
+    const webhookUrlCol = headers.indexOf(COMMANDER_DATABASE.COLUMNS.WEBHOOK_URL);
+
+    if (nameCol === -1 || armyUrlCol === -1 || webhookUrlCol === -1) {
+      throw new Error(
+        `Commander Database must have columns: ${COMMANDER_DATABASE.COLUMNS.NAME}, ` +
+        `${COMMANDER_DATABASE.COLUMNS.ARMY_URL}, ${COMMANDER_DATABASE.COLUMNS.WEBHOOK_URL}`
+      );
+    }
+
+    // Parse data rows (skip header)
+    const configs = [];
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const name = row[nameCol];
+      const armyUrl = row[armyUrlCol];
+      const webhookUrl = row[webhookUrlCol];
+
+      // Skip empty rows
+      if (!name || !armyUrl || !webhookUrl) {
+        logger.debug(`Skipping row ${i + 1} - missing required data`);
+        continue;
+      }
+
+      try {
+        const sheetId = extractSheetId(armyUrl);
+        
+        configs.push({
+          name: name.trim(),
+          sheetId: sheetId,
+          webhookUrl: webhookUrl.trim(),
+          currentSuppliesCell: SUPPLY_CELLS.CURRENT_SUPPLIES,
+          dailyConsumptionCell: SUPPLY_CELLS.DAILY_CONSUMPTION,
+        });
+      } catch (error) {
+        logger.warn(`Skipping row ${i + 1} for ${name}: ${error.message}`);
+      }
+    }
+
+    if (configs.length === 0) {
+      throw new Error("No valid army configurations found in Commander Database");
+    }
+
+    // Validate all configurations
+    validateConfig(configs);
+
+    logger.info(`Loaded ${configs.length} army configurations from Commander Database`);
+    return configs;
   } catch (error) {
     logger.error("Failed to load configuration:", error);
     throw new Error(`Configuration loading failed: ${error.message}`);
@@ -65,31 +149,13 @@ function validateConfig(config) {
         `Sheet configuration ${index} has invalid webhook URL: ${sheetConfig.webhookUrl}`
       );
     }
-
-    // Validate cell addresses (basic validation)
-    if (!isValidCellAddress(sheetConfig.currentSuppliesCell)) {
-      throw new Error(
-        `Sheet configuration ${index} has invalid currentSuppliesCell: ${sheetConfig.currentSuppliesCell}`
-      );
-    }
-
-    if (!isValidCellAddress(sheetConfig.dailyConsumptionCell)) {
-      throw new Error(
-        `Sheet configuration ${index} has invalid dailyConsumptionCell: ${sheetConfig.dailyConsumptionCell}`
-      );
-    }
   });
 
   logger.info(`Configuration validation passed for ${config.length} sheets`);
 }
 
-function isValidCellAddress(cellAddress) {
-  // Basic validation for cell addresses like A1, B2, AA10, etc.
-  return /^[A-Z]+[1-9][0-9]*$/.test(cellAddress);
-}
-
 module.exports = {
   loadConfig,
   validateConfig,
-  isValidCellAddress,
+  extractSheetId,
 };

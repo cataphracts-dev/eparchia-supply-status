@@ -3,7 +3,8 @@ const path = require("path");
 
 class Logger {
   constructor() {
-    this.logLevel = process.env.LOG_LEVEL || "info";
+    // Always use INFO level logging
+    this.logLevel = "info";
     this.levels = {
       debug: 0,
       info: 1,

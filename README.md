@@ -4,9 +4,10 @@ Automated supply tracking for Cataphracts campaigns. Monitors Google Sheets for 
 
 ## What it does
 
-- Reads current supplies and daily consumption from Google Sheets
+- Reads army configurations from a central Commander Database spreadsheet
+- Reads current supplies and daily consumption from each army's Google Sheet
 - Subtracts daily consumption from current supplies
-- Updates the sheet with new supply levels
+- Updates the sheets with new supply levels
 - Sends Discord alerts when supplies are low
 - Runs automatically once per day (configurable - see below)
 
@@ -22,36 +23,51 @@ Create a Google Cloud project (free):
 4. Create Service Account (APIs & Services > Credentials)
 5. Download the JSON key file
 6. Share your Google Sheets with the service account email (Editor permissions)
+   - Share the Commander Database spreadsheet
+   - Share all army spreadsheets
 
-### 2. Google Sheets Format
+### 2. Commander Database Setup
 
-Your sheet must have these cells:
+Create a Google Sheet with a tab named **"Commander Database"** containing:
 
-- **Current Supplies**: A number (e.g., cell B2: `150`)
-- **Daily Consumption**: A number (e.g., cell B3: `5`)
+| Name | Army URL | Webhook URL |
+|------|----------|-------------|
+| Saraian 1st Army | https://docs.google.com/spreadsheets/d/1AbCdEf... | https://discord.com/api/webhooks/123/abc... |
+| Keltic Raiders | https://docs.google.com/spreadsheets/d/1ZyXwVu... | https://discord.com/api/webhooks/456/def... |
+
+**Required columns:**
+- **Name**: Army name for notifications
+- **Army URL**: Full Google Sheets URL or just the sheet ID
+- **Webhook URL**: Discord webhook URL (with optional `?thread_id=` parameter)
+
+The system will extract the sheet ID from the Army URL automatically.
+
+### 3. Army Sheets Format
+
+Each army's Google Sheet must have these cells:
+
+- **Cell C9**: Current Supplies (a number, e.g., `150`)
+- **Cell C11**: Daily Consumption (a number, e.g., `5`)
 
 Example layout:
 
 ```
-A1: Army                    B1: Saraian 1st Army
-A2: Current Supplies        B2: 150
-A3: Daily Consumption       B3: 5
+A9: Current Supplies        C9: 150
+A11: Daily Consumption      C11: 5
 ```
 
-Names & position don't need to match; just so long as you provide the right locations.
+**Note:** Cell addresses (C9/C11) are hardcoded but can be easily changed in `src/utils/constants.js`.
 
-### 3. Discord Webhooks
+### 4. Discord Webhooks
 
 Create webhooks for notifications:
 
 **Channel webhook:**
-
 ```
 https://discord.com/api/webhooks/{webhook_id}/{token}
 ```
 
 **Thread webhook:**
-
 ```
 https://discord.com/api/webhooks/{webhook_id}/{token}?thread_id={thread_id}
 ```
@@ -59,42 +75,38 @@ https://discord.com/api/webhooks/{webhook_id}/{token}?thread_id={thread_id}
 To create: Right-click channel > Edit Channel > Integrations > Create Webhook > Copy URL
 
 To get thread id:
-
 1. User Settings > Advanced > Enable Developer Mode
-1. Right-click thread > Copy Thread ID
+2. Right-click thread > Copy Thread ID
 
-### 4. GitHub Repository
+### 5. GitHub Repository
 
 1. Fork this repository
 2. Add these secrets (Settings > Secrets and variables > Actions):
    - `GOOGLE_SERVICE_ACCOUNT_KEY`: Base64-encoded service account JSON
-   - `SHEETS_CONFIG`: JSON configuration (see below)
+   - `GOOGLE_SHEET_URL`: The URL of your Commander Database spreadsheet
 
-### 5. Configuration
+#### Encoding the Service Account Key
 
-Set `SHEETS_CONFIG` secret to JSON like this:
-
-```json
-[
-  {
-    "name": "Saraian 1st Army",
-    "sheetId": "1AbCdEfGhIjKlMnOpQrStUvWxYz1234567890",
-    "sheetName": "Supply Tracker",
-    "webhookUrl": "https://discord.com/api/webhooks/123/abc?thread_id=456",
-    "currentSuppliesCell": "B2",
-    "dailyConsumptionCell": "B3"
-  }
-]
+**On Windows (PowerShell):**
+```powershell
+$bytes = [System.IO.File]::ReadAllBytes("path\to\service-account.json")
+$base64 = [System.Convert]::ToBase64String($bytes)
+$base64 | Set-Clipboard
 ```
 
-**Configuration fields:**
+**On Mac/Linux:**
+```bash
+base64 -i service-account.json | pbcopy
+```
 
-- `name`: Army name for notifications
-- `sheetId`: Google Sheet ID (from URL: `/d/{this-part}/edit`)
-- `sheetName`: Sheet tab name (optional, uses first tab if omitted)
-- `webhookUrl`: Discord webhook URL (with optional thread_id)
-- `currentSuppliesCell`: Cell containing current supplies (e.g., "B2")
-- `dailyConsumptionCell`: Cell containing daily consumption (e.g., "B3")
+#### Getting the Sheet URL
+
+Copy the full URL of your Commander Database spreadsheet:
+```
+https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz1234567890/edit
+```
+
+You can paste the full URL or just the sheet ID - both work!
 
 ## Timing Configuration
 
@@ -177,50 +189,17 @@ The bot sends Discord embeds with supply status:
 - **Red** (🚨): 1-3 days remaining
 - **Critical** (🚨): 0 days remaining
 
-## Multiple Army Examples
+## Customization
 
-### Separate Sheets
+### Changing Supply Cell Locations
 
-```json
-[
-  {
-    "name": "Saraian 1st Army",
-    "sheetId": "1AbCdEfGhIjKlMnOpQrStUvWxYz123",
-    "webhookUrl": "https://discord.com/api/webhooks/111/aaa",
-    "currentSuppliesCell": "B2",
-    "dailyConsumptionCell": "B3"
-  },
-  {
-    "name": "Keltic Raiders",
-    "sheetId": "1ZyXwVuTsRqPoNmLkJiHgFe456",
-    "webhookUrl": "https://discord.com/api/webhooks/222/bbb",
-    "currentSuppliesCell": "B2",
-    "dailyConsumptionCell": "B3"
-  }
-]
-```
+If your army sheets use different cells for supply data, edit `src/utils/constants.js`:
 
-### Multiple Tabs, Same Sheet
-
-```json
-[
-  {
-    "name": "Saraian 1st Army",
-    "sheetId": "1AbCdEfGhIjKlMnOpQrStUvWxYz123",
-    "sheetName": "1st Army",
-    "webhookUrl": "https://discord.com/api/webhooks/111/aaa?thread_id=333",
-    "currentSuppliesCell": "B2",
-    "dailyConsumptionCell": "B3"
-  },
-  {
-    "name": "Saraian 2nd Army",
-    "sheetId": "1AbCdEfGhIjKlMnOpQrStUvWxYz123",
-    "sheetName": "2nd Army",
-    "webhookUrl": "https://discord.com/api/webhooks/111/aaa?thread_id=444",
-    "currentSuppliesCell": "B2",
-    "dailyConsumptionCell": "B3"
-  }
-]
+```javascript
+const SUPPLY_CELLS = {
+  CURRENT_SUPPLIES: "C9",  // Change this
+  DAILY_CONSUMPTION: "C11", // Change this
+};
 ```
 
 ## Security & Privacy
@@ -262,36 +241,44 @@ This project uses **targeted private logging** to protect sensitive supply data 
 
 This approach protects **operational security and tactical intelligence** while maintaining **full transparency for debugging** errors and system status.
 
-**Important**: Log levels (INFO/WARN/ERROR) remain consistent between local development and public logs, preventing analysis of logging patterns to infer tactical situations.
-
 See [Private Logging Documentation](docs/PRIVATE_LOGGING.md) for complete details.
 
 ## Testing
 
-Validate configuration:
+Run locally (requires `.env` file - see below):
 
 ```bash
 npm install
-npm run validate
-```
-
-Test run (will modify sheets and send Discord messages):
-
-```bash
 npm start
 ```
 
 Manual GitHub Actions run: Go to Actions tab > Supply Status Monitor > Run workflow
 
+## Local Development
+
+Create a `.env` file:
+
+```bash
+# Service account for Google Sheets API
+GOOGLE_SERVICE_ACCOUNT_PATH=./config/service-account.json
+
+# Commander Database spreadsheet URL (or just the ID)
+GOOGLE_SHEET_URL=https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz1234567890/edit
+```
+
 ## Troubleshooting
 
-**"No data found in cell"**: Check cell address format ("B2" not "b2"), verify cell contains numbers
+**"No data found in Commander Database"**: Verify sheet name is exactly "Commander Database", check columns are "Name", "Army URL", "Webhook URL"
 
-**"Authentication failed"**: Re-encode service account JSON to Base64, check Google Sheets API is enabled
+**"Invalid Google Sheets URL or ID"**: Make sure Army URL column contains full Google Sheets URLs or valid sheet IDs
+
+**"Authentication failed"**: Re-encode service account JSON to Base64, check Google Sheets API is enabled, verify service account has access to all sheets
 
 **"Discord webhook failed"**: Verify webhook URL, check if webhook was deleted
 
 **Wrong timing**: Modify cron schedule in `.github/workflows/supply-monitor.yml`
+
+**Wrong cell addresses**: Edit `SUPPLY_CELLS` in `src/utils/constants.js`
 
 ## License
 
